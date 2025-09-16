@@ -1,0 +1,26 @@
+#include "pwm.h"
+#include "stm32f0xx_hal.h"
+
+extern TIM_HandleTypeDef htim16; // PB8 TIM16_CH1
+extern TIM_HandleTypeDef htim17; // PB9 TIM17_CH1
+
+static uint32_t arr16, arr17;
+
+void PWM_Init(void)
+{
+    HAL_TIM_PWM_Start(&htim16, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);
+    arr16 = __HAL_TIM_GET_AUTORELOAD(&htim16);
+    arr17 = __HAL_TIM_GET_AUTORELOAD(&htim17);
+}
+
+static inline uint32_t map255(uint32_t arr, uint8_t v) { return (v * arr) / 255u; }
+
+void PWM_SetA(uint8_t d) { __HAL_TIM_SET_COMPARE(&htim16, TIM_CHANNEL_1, map255(arr16, d)); }
+void PWM_SetB(uint8_t d) { __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, map255(arr17, d)); }
+
+void PWM_SetBoth(uint8_t a, uint8_t b)
+{
+    PWM_SetA(a);
+    PWM_SetB(b);
+}

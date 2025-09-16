@@ -1,0 +1,5 @@
+../Core/Src/app.c:13:13:apply_outputs	12
+../Core/Src/app.c:51:6:App_Init	1
+../Core/Src/app.c:60:6:App_Task	6
+../Core/Src/app.c:78:6:App_SetMode	2
+../Core/Src/app.c:91:6:App_SetBrightness	2

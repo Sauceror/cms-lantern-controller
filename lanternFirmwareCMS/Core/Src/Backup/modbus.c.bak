@@ -1,0 +1,187 @@
+#include "modbus.h"
+#include "stm32f0xx_hal.h"
+#include <string.h>
+
+/* ---------------- HW handles ---------------- */
+extern UART_HandleTypeDef huart1;
+
+/* ---------------- Config -------------------- */
+#define MB_RX_BUFSZ 256
+
+/* ---------------- State --------------------- */
+static uint8_t mb_addr = MB_ADDR_DEFAULT;
+
+/* Input (RO) and Holding (RW) registers */
+static uint16_t reg_input[5]  = {0}; /* 0: status, 1..4: currents */
+static uint16_t reg_holding[2] = {0};/* 0: mode,   1: brightness */
+
+/* App callbacks */
+static void (*cb_set_mode)(lantern_mode_t) = NULL;
+static void (*cb_set_brightness)(uint8_t)  = NULL;
+
+/* RX plumbing */
+static volatile uint8_t  rxbuf[MB_RX_BUFSZ];
+static volatile uint16_t rxlen = 0;
+
+/* ---------------- Utilities ----------------- */
+static uint16_t crc16(const uint8_t *buf, uint16_t len)
+{
+    uint16_t crc = 0xFFFF;
+    for (uint16_t i = 0; i < len; i++) {
+        crc ^= buf[i];
+        for (uint8_t j = 0; j < 8; j++) {
+            uint16_t lsb = crc & 1u;
+            crc >>= 1;
+            if (lsb) crc ^= 0xA001u;
+        }
+    }
+    return crc;
+}
+
+static void tx_bytes(const uint8_t *p, uint16_t n)
+{
+    HAL_UART_Transmit(&huart1, (uint8_t *)p, n, 1000);
+}
+
+/* Start DMA RX and enable IDLE interrupt (F0-safe) */
+static void start_rx(void)
+{
+    rxlen = 0;
+    HAL_UART_Receive_DMA(&huart1, (uint8_t*)rxbuf, sizeof(rxbuf));
+    __HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);
+}
+
+/* Called from USART1 IRQ when IDLE flag fires */
+void Modbus_UART_IdleISR(void)
+{
+    uint16_t remaining = 0;
+    if (huart1.hdmarx) remaining = __HAL_DMA_GET_COUNTER(huart1.hdmarx);
+    rxlen = (uint16_t)(MB_RX_BUFSZ - remaining);
+    HAL_UART_DMAStop(&huart1); /* freeze buffer so we can parse */
+}
+
+/* ---------------- Protocol helpers ----------- */
+static void send_exception(uint8_t fcode, uint8_t ex)
+{
+    uint8_t p[5] = {mb_addr, (uint8_t)(fcode | 0x80), ex, 0, 0};
+    uint16_t c = crc16(p, 3);
+    p[3] = (uint8_t)(c & 0xFF);
+    p[4] = (uint8_t)(c >> 8);
+    tx_bytes(p, 5);
+}
+
+static uint8_t handle_read_regs(uint8_t fcode, uint16_t addr, uint16_t qty)
+{
+    const uint16_t max_qty = 0x7D; /* 125 regs */
+    if (qty == 0 || qty > max_qty) return 3; /* ILLEGAL_DATA_VALUE */
+
+    const uint16_t *src = NULL;
+    uint16_t span = 0;
+    if (fcode == 0x04) {
+        src = reg_input;
+        span = (uint16_t)(sizeof(reg_input)/2u);
+    } else if (fcode == 0x03) {
+        src = reg_holding;
+        span = (uint16_t)(sizeof(reg_holding)/2u);
+    } else return 1;
+
+    if ((addr + qty) > span) return 2; /* ILLEGAL_DATA_ADDRESS */
+
+    uint8_t out[3 + 2*125 + 2];
+    uint16_t idx = 0;
+    out[idx++] = mb_addr;
+    out[idx++] = fcode;
+    out[idx++] = (uint8_t)(qty * 2);
+    for (uint16_t i = 0; i < qty; i++) {
+        uint16_t v = src[addr + i];
+        out[idx++] = (uint8_t)(v >> 8);
+        out[idx++] = (uint8_t)(v & 0xFF);
+    }
+    uint16_t c = crc16(out, idx);
+    out[idx++] = (uint8_t)(c & 0xFF);
+    out[idx++] = (uint8_t)(c >> 8);
+    tx_bytes(out, idx);
+    return 0;
+}
+
+static uint8_t handle_write_single(uint16_t addr, uint16_t val)
+{
+    switch (addr) {
+    case 0x0000: /* MODE */
+        if (val > 5u) return 3;
+        reg_holding[0] = val;
+        if (cb_set_mode) cb_set_mode((lantern_mode_t)val);
+        break;
+    case 0x0001: /* BRIGHTNESS */
+        if (val > 255u) return 3;
+        reg_holding[1] = val;
+        if (cb_set_brightness) cb_set_brightness((uint8_t)val);
+        break;
+    default:
+        return 2;
+    }
+    uint8_t out[8] = {mb_addr, 0x06,
+                      (uint8_t)(addr >> 8), (uint8_t)addr,
+                      (uint8_t)(val  >> 8),  (uint8_t)val, 0, 0};
+    uint16_t c = crc16(out, 6);
+    out[6] = (uint8_t)(c & 0xFF);
+    out[7] = (uint8_t)(c >> 8);
+    tx_bytes(out, 8);
+    return 0;
+}
+
+static void process_frame(const uint8_t *p, uint16_t n)
+{
+    if (n < 8) return;                     // all supported requests are 8B
+    if (p[0] != mb_addr) return;
+
+    uint16_t c = crc16(p, (uint16_t)(n - 2));
+    if (((c & 0xFF) != p[n-2]) || ((c >> 8) != p[n-1])) return;
+
+    uint8_t f = p[1];
+    if (f == 0x03 || f == 0x04) {
+        uint16_t a = (uint16_t)p[2] << 8 | p[3];
+        uint16_t q = (uint16_t)p[4] << 8 | p[5];
+        uint8_t ex = handle_read_regs(f, a, q);
+        if (ex) send_exception(f, ex);
+    } else if (f == 0x06) {
+        uint16_t a = (uint16_t)p[2] << 8 | p[3];
+        uint16_t v = (uint16_t)p[4] << 8 | p[5];
+        uint8_t ex = handle_write_single(a, v);
+        if (ex) send_exception(f, ex);
+    } else {
+        send_exception(f, 1); // ILLEGAL_FUNCTION
+    }
+}
+
+/* --------------- Public API ----------------- */
+void Modbus_Init(void (*setMode)(lantern_mode_t), void (*setBrightness)(uint8_t))
+{
+    cb_set_mode = setMode;
+    cb_set_brightness = setBrightness;
+    memset(reg_input, 0, sizeof(reg_input));
+    memset(reg_holding, 0, sizeof(reg_holding));
+    start_rx();
+}
+
+void Modbus_Task(void)
+{
+    uint16_t n = rxlen;
+    if (n) {
+        __disable_irq();
+        rxlen = 0;
+        __enable_irq();
+        process_frame((const uint8_t*)rxbuf, n);
+        start_rx();
+    }
+}
+
+void Modbus_SetStatus(uint16_t st)              { reg_input[0] = st; }
+void Modbus_SetBrightnessReg(uint16_t b)        { reg_holding[1] = b; }
+void Modbus_SetCurrentRegs(uint16_t mA0, uint16_t mA1)
+{
+    reg_input[1] = mA0;
+    reg_input[2] = mA1;
+    reg_input[3] = 0;
+    reg_input[4] = 0;
+}

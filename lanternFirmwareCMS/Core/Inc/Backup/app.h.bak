@@ -1,0 +1,10 @@
+#pragma once
+#include <stdint.h>
+#include "modbus.h"
+
+void App_Init(void);
+void App_Task(void);
+
+// Optional external control
+void App_SetMode(uint16_t m);
+void App_SetBrightness(uint8_t b);

@@ -1,0 +1,7 @@
+../Core/Src/modbus.c:31:17:crc16	4
+../Core/Src/modbus.c:49:13:start_rx	1
+../Core/Src/modbus.c:56:6:Modbus_UART_IdleISR	23
+../Core/Src/modbus.c:190:6:Modbus_Init	1
+../Core/Src/modbus.c:201:6:Modbus_SetStatus	1
+../Core/Src/modbus.c:202:6:Modbus_SetBrightnessReg	2
+../Core/Src/modbus.c:203:6:Modbus_SetCurrentRegs	1

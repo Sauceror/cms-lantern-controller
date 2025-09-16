@@ -1,0 +1,4 @@
+../Core/Src/pwm.c:11:24:map_brightness_to_ccr	2
+../Core/Src/pwm.c:21:20:set_ccr_both	1
+../Core/Src/pwm.c:27:6:PWM_Init	1
+../Core/Src/pwm.c:35:6:PWM_SetBoth	1

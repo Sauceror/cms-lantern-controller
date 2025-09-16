@@ -1,0 +1,39 @@
+#pragma once
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// ---- Device / protocol config ----
+#ifndef MB_ADDR_DEFAULT
+#define MB_ADDR_DEFAULT  1u   // change in your build flags if needed
+#endif
+
+typedef enum {
+    LANTERN_OFF = 0,
+    LANTERN_ALL_FLASH = 1,
+    LANTERN_SIDE_SIDE = 2,
+    LANTERN_UP_DOWN   = 3,
+    LANTERN_DIAGONAL  = 4,
+    LANTERN_ALL_ON    = 5
+} lantern_mode_t;
+
+// Called from USART1 IRQ idle branch
+void Modbus_UART_IdleISR(void);
+
+// Initialize Modbus stack and register app callbacks
+void Modbus_Init(void (*setMode)(lantern_mode_t),
+                 void (*setBrightness)(uint8_t));
+
+// Call periodically from main loop (non-blocking)
+void Modbus_Task(void);
+
+// Feed input registers for host to read
+void Modbus_SetStatus(uint16_t status_word);
+void Modbus_SetCurrentRegs(uint16_t mA0, uint16_t mA1);
+void Modbus_SetBrightnessReg(uint16_t bri); // if you want to mirror current brightness
+
+#ifdef __cplusplus
+}
+#endif

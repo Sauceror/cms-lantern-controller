@@ -1,0 +1,6 @@
+#pragma once
+#include <stdint.h>
+void PWM_Init(void);
+void PWM_SetA(uint8_t d);
+void PWM_SetB(uint8_t d);
+void PWM_SetBoth(uint8_t a, uint8_t b);

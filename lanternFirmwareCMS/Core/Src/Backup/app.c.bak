@@ -1,0 +1,97 @@
+#include "app.h"
+#include "pwm.h"
+#include "sensors.h"
+#include "modbus.h"
+#include "stm32f0xx_hal.h"
+
+#ifndef CMS_FLASHERS
+#define CMS_FLASHERS 2   // set to 4 for 4-flasher CMS
+#endif
+
+static uint8_t       g_brightness = 200; // 0..255
+static uint16_t      g_mode       = 0;   // numeric to avoid enum name mismatches
+static uint32_t      t_ms;
+static uint8_t       phase;
+
+static void apply_mode(void)
+{
+    switch (g_mode)
+    {
+    case 0: /* OFF */
+        PWM_SetBoth(0, 0);
+        break;
+
+    case 5: /* ALL_ON */
+        PWM_SetBoth(g_brightness, g_brightness);
+        break;
+
+    case 1: /* ALL_FLASH */
+        if (phase) PWM_SetBoth(g_brightness, g_brightness);
+        else       PWM_SetBoth(0, 0);
+        break;
+
+    case 2: /* SIDE_SIDE */
+        PWM_SetBoth(phase ? g_brightness : 0,
+                    phase ? 0            : g_brightness);
+        break;
+
+    case 3: /* UP_DOWN - for 2 flashers treat as OFF (or map to SIDE_SIDE) */
+#if CMS_FLASHERS == 2
+        PWM_SetBoth(0, 0);
+#else
+        // implement for upper/lower pairs on 4-flasher hardware
+#endif
+        break;
+
+    case 4: /* DIAGONAL / WIG-WAG for 4 flashers */
+#if CMS_FLASHERS == 2
+        PWM_SetBoth(0, 0);
+#else
+        // implement alt diagonal pairs for 4-flasher hardware
+#endif
+        break;
+
+    default:
+        PWM_SetBoth(0, 0);
+        break;
+    }
+}
+
+void App_SetMode(uint16_t m)
+{
+    g_mode = m;
+    Modbus_SetStatus(m);
+    apply_mode();
+}
+
+void App_SetBrightness(uint8_t b)
+{
+    g_brightness = b;
+    PWM_SetBoth(b, b);
+    Modbus_SetBrightnessReg(b);
+}
+
+void App_Init(void)
+{
+    PWM_Init();
+    Sensors_Init();
+    // Hook Modbus writes to our setters (MODE addr=0, BRIGHTNESS addr=1)
+    Modbus_Init((void(*)(lantern_mode_t))App_SetMode, App_SetBrightness);
+    t_ms = HAL_GetTick();
+    apply_mode();
+}
+
+void App_Task(void)
+{
+    // 1 Hz phase toggle for flashing/patterns
+    uint32_t now = HAL_GetTick();
+    if ((now - t_ms) >= 500)   // 2 phases per second → 1 Hz
+    {
+        t_ms = now;
+        phase ^= 1u;
+        apply_mode();
+    }
+
+    Sensors_Task();  // keep currents fresh
+    Modbus_Task();   // process frames
+}

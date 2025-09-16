@@ -1,0 +1,8 @@
+#ifndef SENSORS_H
+#define SENSORS_H
+#include <stdint.h>
+void Sensors_Init(void);
+void Sensors_Task(void); // updates Modbus input regs
+uint16_t Sensors_mA_0(void);
+uint16_t Sensors_mA_1(void);
+#endif

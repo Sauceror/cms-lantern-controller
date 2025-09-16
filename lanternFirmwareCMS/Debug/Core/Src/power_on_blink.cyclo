@@ -1,0 +1,3 @@
+../Core/Src/power_on_blink.c:8:23:clamp_u8	2
+../Core/Src/power_on_blink.c:20:6:PowerOn_Blink	4
+../Core/Src/power_on_blink.c:63:6:PowerOn_Blink_Default	1
