@@ -9,5 +9,7 @@ Features:
 ⦁	Brightness control (0–255) mapped to PWM duty cycle   
 ⦁	Power on blink sequence for status indication (2–3 blinks)   
 ⦁	ADC based current monitoring for each lantern channel   
-⦁	Robust exception handling for invalid Modbus function codes and register writes   Modular code structure ("pwm.c", "app.c", "modbus.c", eg.) for clarity and maintainability  
+⦁	Robust exception handling for invalid Modbus function codes and register writes   Modular code structure ("pwm.c", "app.c", "modbus.c", eg.) for clarity and maintainability
+
+  
 This repository is intended as a reference and testing implementation for Brightway Electronics' lantern controller prototypes. It demonstrates real time control, communication and diagnostics over Modbus and can be adapted for other embedded lighting systems.
