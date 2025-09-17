@@ -1,6 +1,8 @@
 # cms-lantern-controller
-Embedded firmware for a CMS Lantern Controller based on STM32F0, supporting PWM driven lantern outputs with Modbus RTU control.    
+Embedded firmware for a CMS Lantern Controller based on STM32F0, supporting PWM driven lantern outputs with Modbus RTU control.
+    
 Features:
+
 ⦁	STM32F0 firmware written in C with STM32CubeIDE + HAL drivers
 ⦁	Modbus RTU slave implementation at 19200 8N2 for remote control   
 ⦁	Configurable modes: ALL OFF, ALL ON, ALL FLASH (in phase), SIDE/SIDE (alternating)   
